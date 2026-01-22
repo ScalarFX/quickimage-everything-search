@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.so
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Config (user specific)
+.image_search_config.json
+
+# Unused files
+_unused/
+
+# OS
+.DS_Store
+Thumbs.db
