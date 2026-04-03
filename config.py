@@ -3,7 +3,6 @@
 负责读取和保存用户配置（源路径、输出路径等）
 """
 import json
-import os
 from pathlib import Path
 
 CONFIG_FILE = Path.home() / ".image_search_config.json"
@@ -12,6 +11,7 @@ DEFAULT_CONFIG = {
     "source_path": "",
     "output_path": "",
     "exact_match": True,
+    "window_geometry": "",
     "image_extensions": [".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".tiff", ".tif"]
 }
 

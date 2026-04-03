@@ -3,10 +3,12 @@ QuickImage - 极简图片搜索 (Everything 风格)
 使用 .pyw 扩展名隐藏控制台窗口
 """
 import os
+import queue
+import re
 import shutil
 import threading
-import time
 import tkinter as tk
+import tkinter.font as tkfont
 from tkinter import ttk, filedialog, messagebox
 import ctypes
 
@@ -20,7 +22,7 @@ except:
         pass
 
 from config import load_config, save_config
-from search_engine import search_images, parse_keywords
+from search_engine import search_images, parse_keywords, get_backend_label
 
 # 系统托盘支持
 try:
@@ -31,6 +33,7 @@ except ImportError:
     HAS_TRAY = False
 
 OUTPUT_DIR = os.path.join(os.path.expanduser("~"), "Desktop", "每日JIT")
+WINDOW_EDGE_MARGIN = 40
 
 
 class App(tk.Tk):
@@ -38,14 +41,30 @@ class App(tk.Tk):
         super().__init__()
         
         self.cfg = load_config()
+
+        self.colors = {
+            "bg_app": "#f6f7f9",
+            "bg_card": "#ffffff",
+            "bg_subtle": "#f3f4f6",
+            "border": "#d9dde3",
+            "text": "#1f2933",
+            "text_muted": "#6b7280",
+            "accent_soft": "#dbeafe",
+            "row_alt": "#fafbfc",
+        }
+
+        self.spacing = {
+            "outer": 6,
+            "section": 4,
+            "inner": 4,
+            "status_top": 3,
+        }
         
         self.title("QuickImage")
-        self.geometry("1024x680")
+        self.geometry("920x580")
         self.minsize(600, 400)
-        self.configure(bg="white")
+        self.configure(bg=self.colors["bg_app"])
         
-        # 启动时隐藏主窗口
-        self.withdraw()
         
         # 图标
         self.icon_path = os.path.join(os.path.dirname(__file__), "i.png")
@@ -55,26 +74,54 @@ class App(tk.Tk):
                 self.iconphoto(True, img)
             except:
                 pass
+
+        self.tree_font = tkfont.Font(family="Segoe UI", size=9)
+        self.heading_font = tkfont.Font(family="Microsoft YaHei", size=9)
+        self.status_font = tkfont.Font(family="Microsoft YaHei UI", size=9)
+        self.tree_rowheight = max(self.tree_font.metrics("linespace") + 10, 28)
         
         self._setup_styles()
+        self.default_name_col_width = 180
+        self.max_name_col_width = 280
+        self.current_name_col_width = self.default_name_col_width
         
         self.results = []
         self.timer = None
-        self.is_topmost = tk.BooleanVar(value=False)  # 默认不置顶
+        self.search_delay_ms = 200
+        self.search_token = 0
+        self.last_search_signature = None
+        self.search_queue = queue.Queue(maxsize=1)
+        self.search_worker = threading.Thread(target=self._search_worker_loop, daemon=True)
+        self.search_worker.start()
+
+        self.size_update_token = 0
+        self.render_update_token = 0
+        self.render_job = None
+        self.geometry_save_job = None
+
+        self.max_display_results = 1000
+        self.max_search_results = 5000
+        self.render_chunk_size = 60
+        self.render_interval_ms = 10
+        self.size_preload_limit = 120
+        self.name_measure_limit = 120
+
+        self.is_topmost = tk.BooleanVar(value=True)  # 默认置顶
         self.tray_icon = None
         
         self._menu()
         self._ui()
-        self._setup_tray()
+        self._restore_window_geometry()
+        # 不使用系统托盘
         
-        # 最小化时隐藏到托盘
-        self.protocol("WM_DELETE_WINDOW", self._hide_to_tray)
-        self.bind("<Unmap>", self._on_minimize)
+        # 关闭窗口直接退出
+        self.protocol("WM_DELETE_WINDOW", self._quit_app)
+        self.bind("<Configure>", self._on_window_configure)
         
-        os.makedirs(OUTPUT_DIR, exist_ok=True)
+        self._update_output_status(self._ensure_output_dir())
         
-        # 延迟加载全局热键（加速启动）
-        self.after(1000, self._hotkey)
+        # 默认置顶
+        self._toggle_topmost()
 
     def _setup_tray(self):
         """设置系统托盘"""
@@ -117,31 +164,166 @@ class App(tk.Tk):
 
     def _quit_app(self):
         """退出程序"""
+        self._save_window_geometry()
         if self.tray_icon:
             self.tray_icon.stop()
         self.after(0, self.destroy)
 
+    def _is_valid_window_geometry(self, geometry):
+        if not isinstance(geometry, str):
+            return False
+        return bool(re.match(r"^\d+x\d+[+-]\d+[+-]\d+$", geometry.strip()))
+
+    def _parse_window_geometry(self, geometry):
+        if not self._is_valid_window_geometry(geometry):
+            return None
+
+        m = re.match(r"^(\d+)x(\d+)([+-]\d+)([+-]\d+)$", geometry.strip())
+        if not m:
+            return None
+
+        width, height, x, y = m.groups()
+        return int(width), int(height), int(x), int(y)
+
+    def _get_default_window_size(self):
+        self.update_idletasks()
+        screen_w = max(self.winfo_screenwidth(), 800)
+        screen_h = max(self.winfo_screenheight(), 600)
+        width = min(920, max(screen_w - WINDOW_EDGE_MARGIN * 2, 600))
+        height = min(580, max(screen_h - 160, 400))
+        return width, height
+
+    def _fit_geometry_to_screen(self, geometry):
+        parsed = self._parse_window_geometry(geometry)
+        if not parsed:
+            return None
+
+        width, height, x, y = parsed
+        screen_w = max(self.winfo_screenwidth(), 800)
+        screen_h = max(self.winfo_screenheight(), 600)
+
+        max_width = max(screen_w - WINDOW_EDGE_MARGIN * 2, 600)
+        max_height = max(screen_h - 120, 400)
+        width = min(max(width, 600), max_width)
+        height = min(max(height, 400), max_height)
+
+        min_x = 0
+        min_y = 0
+        max_x = max(screen_w - width, 0)
+        max_y = max(screen_h - height - 80, 0)
+        x = min(max(x, min_x), max_x)
+        y = min(max(y, min_y), max_y)
+
+        return f"{width}x{height}+{x}+{y}"
+
+    def _center_main_window(self):
+        self.update_idletasks()
+        width = self.winfo_width()
+        height = self.winfo_height()
+        screen_w = self.winfo_screenwidth()
+        screen_h = self.winfo_screenheight()
+        if width <= 1 or height <= 1:
+            width, height = self._get_default_window_size()
+        else:
+            width = min(width, max(screen_w - WINDOW_EDGE_MARGIN * 2, 600))
+            height = min(height, max(screen_h - 120, 400))
+        x = max((screen_w - width) // 2, 0)
+        y = max((screen_h - height) // 3, 0)
+        self.geometry(f"{width}x{height}+{x}+{y}")
+
+    def _restore_window_geometry(self):
+        saved_geometry = self.cfg.get("window_geometry", "")
+        fitted_geometry = self._fit_geometry_to_screen(saved_geometry)
+        if fitted_geometry:
+            self.geometry(fitted_geometry)
+        else:
+            width, height = self._get_default_window_size()
+            self.geometry(f"{width}x{height}")
+            self._center_main_window()
+
+    def _save_window_geometry(self):
+        if self.state() != "normal":
+            return
+        current_geometry = self.geometry()
+        fitted_geometry = self._fit_geometry_to_screen(current_geometry)
+        if fitted_geometry:
+            self.cfg["window_geometry"] = fitted_geometry
+            save_config(self.cfg)
+
+    def _on_window_configure(self, event):
+        if event.widget != self:
+            return
+        if self.state() != "normal":
+            return
+        if self.geometry_save_job:
+            self.after_cancel(self.geometry_save_job)
+        self.geometry_save_job = self.after(500, self._save_window_geometry_debounced)
+
+    def _save_window_geometry_debounced(self):
+        self.geometry_save_job = None
+        self._save_window_geometry()
+
+    def _clamp_popup_position(self, width, height, x, y, top_gap=20):
+        screen_w = max(self.winfo_screenwidth(), width)
+        screen_h = max(self.winfo_screenheight(), height)
+        max_x = max(screen_w - width - 10, 0)
+        max_y = max(screen_h - height - 50, 0)
+        clamped_x = min(max(x, 0), max_x)
+        clamped_y = min(max(y, top_gap), max_y)
+        return clamped_x, clamped_y
+
+    def _get_output_dir(self):
+        configured_output = str(self.cfg.get("output_path", "")).strip()
+        if configured_output:
+            return os.path.normpath(configured_output)
+        return OUTPUT_DIR
+
+    def _ensure_output_dir(self):
+        output_dir = self._get_output_dir()
+        try:
+            os.makedirs(output_dir, exist_ok=True)
+            return output_dir
+        except:
+            os.makedirs(OUTPUT_DIR, exist_ok=True)
+            self.cfg["output_path"] = ""
+            save_config(self.cfg)
+            return OUTPUT_DIR
+
     def _setup_styles(self):
         self.style = ttk.Style()
-        self.style.theme_use('vista')
+        try:
+            self.style.theme_use('clam')
+        except:
+            pass
         
         self.style.configure("Treeview",
-            background="white",
-            foreground="black",
-            fieldbackground="white",
-            rowheight=26,
-            font=("Segoe UI", 10)
+            background=self.colors["bg_card"],
+            foreground=self.colors["text"],
+            fieldbackground=self.colors["bg_card"],
+            rowheight=self.tree_rowheight,
+            borderwidth=0,
+            relief="flat",
+            padding=(4, 2),
+            font=self.tree_font
         )
         self.style.configure("Treeview.Heading",
-            font=("Microsoft YaHei", 9),
-            padding=(5, 4)
+            background=self.colors["bg_subtle"],
+            foreground=self.colors["text"],
+            borderwidth=0,
+            relief="flat",
+            font=self.heading_font,
+            padding=(8, 6)
+        )
+        self.style.map("Treeview.Heading",
+            background=[("active", self.colors["bg_subtle"])],
+            relief=[("pressed", "flat"), ("active", "flat")]
         )
         self.style.map("Treeview",
-            background=[("selected", "#cce8ff")],
-            foreground=[("selected", "black")]
+            background=[("selected", self.colors["accent_soft"])],
+            foreground=[("selected", self.colors["text"])]
         )
         
-        self.style.configure("Vertical.TScrollbar", width=14)
+        self.style.configure("Vertical.TScrollbar", width=10)
 
     def _menu(self):
         menu_bg = "#ffffff"
@@ -156,13 +338,14 @@ class App(tk.Tk):
         f = tk.Menu(m, tearoff=0, bg=menu_bg, fg=menu_fg,
                     activebackground=menu_active_bg, activeforeground=menu_active_fg)
         f.add_command(label="设置源目录(O)...", command=self._browse)
+        f.add_command(label="设置保存目录(S)...", command=self._browse_output)
         f.add_separator()
         f.add_command(label="退出(X)", command=self._quit_app, accelerator="Alt+F4")
         m.add_cascade(label="文件(F)", menu=f, underline=0)
         
         e = tk.Menu(m, tearoff=0, bg=menu_bg, fg=menu_fg,
                     activebackground=menu_active_bg, activeforeground=menu_active_fg)
-        e.add_command(label="复制到桌面(C)", command=self._copy, accelerator="Ctrl+C")
+        e.add_command(label="复制到保存目录(C)", command=self._copy, accelerator="Ctrl+C")
         e.add_separator()
         e.add_command(label="全选(A)", command=self._select_all, accelerator="Ctrl+A")
         e.add_checkbutton(label="窗口置顶(T)", variable=self.is_topmost, command=self._toggle_topmost, accelerator="T")
@@ -185,53 +368,220 @@ class App(tk.Tk):
         self.bind("<Control-F1>", lambda e: self._about())
 
     def _ui(self):
-        search_frame = tk.Frame(self, bg="white")
-        search_frame.pack(fill="x", padx=3, pady=4)
+        body = tk.Frame(self, bg=self.colors["bg_app"])
+        body.pack(
+            fill="both",
+            expand=True,
+            padx=self.spacing["outer"],
+            pady=(self.spacing["outer"], 0)
+        )
+
+        search_card = tk.Frame(
+            body,
+            bg=self.colors["bg_card"],
+            highlightthickness=1,
+            highlightbackground=self.colors["border"]
+        )
+        search_card.pack(fill="x", pady=(0, self.spacing["section"]))
+
+        search_frame = tk.Frame(search_card, bg=self.colors["bg_card"])
+        search_frame.pack(
+            fill="x",
+            padx=self.spacing["inner"],
+            pady=self.spacing["inner"]
+        )
         
-        self.entry = tk.Entry(search_frame, font=("Segoe UI", 12), relief="solid", bd=1)
-        self.entry.pack(fill="x", ipady=4)
+        self.entry = tk.Entry(
+            search_frame,
+            font=("Segoe UI", 11),
+            bg=self.colors["bg_card"],
+            fg=self.colors["text"],
+            insertbackground=self.colors["text"],
+            relief="flat",
+            bd=0
+        )
+        self.entry.pack(fill="x", ipady=2)
         self.entry.bind("<KeyRelease>", self._key)
         self.entry.bind("<Return>", lambda e: self._copy())
+        self.entry.bind("<Button-1>", self._on_entry_focus)
+        self.entry.bind("<FocusIn>", self._on_entry_focus)
         
-        list_frame = tk.Frame(self, bg="white")
-        list_frame.pack(fill="both", expand=True, padx=0, pady=0)
+        list_frame = tk.Frame(
+            body,
+            bg=self.colors["bg_card"],
+            highlightthickness=1,
+            highlightbackground=self.colors["border"]
+        )
+        list_frame.pack(fill="both", expand=True)
         
-        cols = ("name", "path", "size", "date")
+        cols = ("name", "path", "size")
         self.tree = ttk.Treeview(list_frame, columns=cols, show="headings", selectmode="extended")
         
         self.tree.heading("name", text="名称", anchor="w")
         self.tree.heading("path", text="路径", anchor="w")
         self.tree.heading("size", text="大小", anchor="e")
-        self.tree.heading("date", text="修改时间", anchor="w")
         
-        self.tree.column("name", width=180, minwidth=100, anchor="w")
-        self.tree.column("path", width=480, minwidth=200, anchor="w")
-        self.tree.column("size", width=90, minwidth=70, anchor="e")
-        self.tree.column("date", width=160, minwidth=140, anchor="w")
+        self.tree.column("name", width=self.default_name_col_width, minwidth=120, anchor="w", stretch=False)
+        self.tree.column("path", width=420, minwidth=180, anchor="w", stretch=True)
+        self.tree.column("size", width=86, minwidth=70, anchor="e", stretch=False)
+
+        self.tree.tag_configure("base", background=self.colors["bg_card"])
+        self.tree.tag_configure("alt", background=self.colors["row_alt"])
         
-        vsb = ttk.Scrollbar(list_frame, orient="vertical", command=self.tree.yview)
-        self.tree.configure(yscrollcommand=vsb.set)
+        self.vsb = ttk.Scrollbar(list_frame, orient="vertical", command=self.tree.yview)
+        self.tree.configure(yscrollcommand=self._on_tree_scroll)
         
         self.tree.grid(row=0, column=0, sticky="nsew")
-        vsb.grid(row=0, column=1, sticky="ns")
+        self.vsb.grid(row=0, column=1, sticky="ns")
+        self.tree.bind("<Configure>", self._resize_tree_columns)
+        list_frame.bind("<Configure>", self._resize_tree_columns)
         
         list_frame.grid_rowconfigure(0, weight=1)
         list_frame.grid_columnconfigure(0, weight=1)
         
-        status_frame = tk.Frame(self, bg="#f0f0f0", height=24, relief="sunken", bd=1)
-        status_frame.pack(side="bottom", fill="x")
-        status_frame.pack_propagate(False)
+        status_frame = tk.Frame(
+            self,
+            bg=self.colors["bg_card"],
+            highlightthickness=1,
+            highlightbackground=self.colors["border"]
+        )
+        status_frame.pack(
+            side="bottom",
+            fill="x",
+            padx=self.spacing["outer"],
+            pady=(self.spacing["status_top"], self.spacing["outer"])
+        )
+        status_top = tk.Frame(status_frame, bg=self.colors["bg_card"])
+        status_top.pack(fill="x", padx=8, pady=(4, 0))
+
+        status_bottom = tk.Frame(status_frame, bg=self.colors["bg_card"])
+        status_bottom.pack(fill="x", padx=8, pady=(0, 4))
         
-        self.status = tk.StringVar(value="")
-        tk.Label(status_frame, textvariable=self.status, bg="#f0f0f0", fg="#333", 
-                 anchor="w", font=("Segoe UI", 9), padx=5).pack(fill="both", expand=True)
+        self.status = tk.StringVar(value="就绪")
+        self.source_info = tk.StringVar(value="源: 未设置")
+        self.output_info = tk.StringVar(value="保存: 未设置")
+        self.engine_info = tk.StringVar(value="引擎: 检测中")
+
+        tk.Label(
+            status_top,
+            textvariable=self.status,
+            bg=self.colors["bg_card"],
+            fg=self.colors["text_muted"],
+            anchor="w",
+            font=self.status_font,
+            pady=1
+        ).pack(side="left", fill="x", expand=True)
+
+        tk.Label(
+            status_top,
+            textvariable=self.engine_info,
+            bg=self.colors["bg_card"],
+            fg=self.colors["text_muted"],
+            anchor="e",
+            font=self.status_font,
+            pady=1
+        ).pack(side="right")
+
+        tk.Label(
+            status_bottom,
+            textvariable=self.source_info,
+            bg=self.colors["bg_card"],
+            fg=self.colors["text_muted"],
+            anchor="w",
+            font=self.status_font,
+            pady=1
+        ).pack(side="left", fill="x", expand=True)
+
+        tk.Label(
+            status_bottom,
+            textvariable=self.output_info,
+            bg=self.colors["bg_card"],
+            fg=self.colors["text_muted"],
+            anchor="e",
+            font=self.status_font,
+            pady=1
+        ).pack(side="right")
+
+        self._update_source_status(self.cfg.get("source_path", ""))
+        self._update_output_status(self._get_output_dir())
+        self._update_engine_status()
+        self.after(0, self._resize_tree_columns)
+
+    def _update_name_col_width(self, max_name_px=0):
+        self.current_name_col_width = max(self.default_name_col_width, min(max_name_px + 24, self.max_name_col_width))
+        self._resize_tree_columns()
+
+    def _resize_tree_columns(self, event=None):
+        if not hasattr(self, "tree"):
+            return
+
+        total_width = self.tree.winfo_width()
+        if total_width <= 1 and event is not None:
+            total_width = event.width
+        if total_width <= 1:
+            return
+
+        size_width = 86
+        path_min = 180
+        name_width = min(self.current_name_col_width, max(total_width - size_width - path_min, 120))
+        path_width = max(total_width - name_width - size_width - 4, path_min)
+
+        self.tree.column("name", width=name_width)
+        self.tree.column("path", width=path_width)
+        self.tree.column("size", width=size_width)
+
+    def _on_tree_scroll(self, first, last):
+        if hasattr(self, "vsb"):
+            self.vsb.set(first, last)
+            if float(first) <= 0.0 and float(last) >= 1.0:
+                self.vsb.grid_remove()
+            else:
+                self.vsb.grid()
+
+    def _short_path(self, path, max_len=32):
+        if not path:
+            return "未设置"
+        if len(path) <= max_len:
+            return path
+        head = max_len // 2 - 2
+        tail = max_len - head - 3
+        return f"{path[:head]}...{path[-tail:]}"
+
+    def _update_source_status(self, path):
+        if not hasattr(self, "source_info"):
+            return
+        self.source_info.set(f"源: {self._short_path(path, 28)}")
+
+    def _update_output_status(self, path):
+        if not hasattr(self, "output_info"):
+            return
+        self.output_info.set(f"保存: {self._short_path(path, 28)}")
+
+    def _update_engine_status(self):
+        if not hasattr(self, "engine_info"):
+            return
+        self.engine_info.set(f"引擎: {get_backend_label()}")
 
     def _browse(self):
         p = filedialog.askdirectory()
         if p:
             self.cfg["source_path"] = p
             save_config(self.cfg)
-            self.status.set(f"源目录: {p}")
+            self._update_source_status(p)
+            self.status.set("源目录已更新")
+
+    def _browse_output(self):
+        initial_dir = self._get_output_dir()
+        if not os.path.isdir(initial_dir):
+            initial_dir = os.path.expanduser("~")
+
+        p = filedialog.askdirectory(initialdir=initial_dir)
+        if p:
+            self.cfg["output_path"] = os.path.normpath(p)
+            save_config(self.cfg)
+            output_dir = self._ensure_output_dir()
+            self._update_output_status(output_dir)
+            self.status.set("保存目录已更新")
 
     def _select_all(self):
         for item in self.tree.get_children():
@@ -247,116 +597,260 @@ class App(tk.Tk):
     def _key(self, e):
         if e.keysym in ["Control_L","Control_R","Shift_L","Shift_R","Alt_L","Alt_R","Return"]:
             return
+        self._interrupt_pending_ui_work()
         if self.timer:
             self.after_cancel(self.timer)
-        self.timer = self.after(150, self._search)
+        self.timer = self.after(self.search_delay_ms, self._search)
 
     def _search(self):
         src = self.cfg.get("source_path", "")
         txt = self.entry.get().strip()
-        
+
         if not src:
+            self.search_token += 1
+            self.last_search_signature = None
+            self._clear_search_queue()
             self.status.set("请先设置源目录 (文件 → 设置源目录)")
+            self._update_source_status("")
             return
         if not txt:
-            self._show([], src)
+            self.search_token += 1
+            self.last_search_signature = None
+            self._clear_search_queue()
+            self._show([], src, "")
             return
 
-        def run():
-            kws = parse_keywords(txt)
-            exts = [".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".tiff"]
-            res = search_images(kws, src, exts, True)
-            self.after(0, lambda: self._show(res, src))
+        signature = (os.path.normcase(os.path.normpath(src)), txt)
+        if signature == self.last_search_signature:
+            return
 
-        threading.Thread(target=run, daemon=True).start()
+        self.last_search_signature = signature
+        self.search_token += 1
+        current_token = self.search_token
+        self.status.set("搜索中...")
+        self._enqueue_search(current_token, src, txt)
 
-    def _show(self, res, source_path):
+    def _clear_search_queue(self):
+        while True:
+            try:
+                self.search_queue.get_nowait()
+                self.search_queue.task_done()
+            except queue.Empty:
+                break
+
+    def _enqueue_search(self, token, source_path, query_text):
+        self._clear_search_queue()
+        try:
+            self.search_queue.put_nowait((token, source_path, query_text))
+        except queue.Full:
+            pass
+
+    def _search_worker_loop(self):
+        while True:
+            token, source_path, query_text = self.search_queue.get()
+            try:
+                keywords = parse_keywords(query_text)
+                exts = [".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".tiff"]
+                results = search_images(keywords, source_path, exts, True, max_results=self.max_search_results)
+            except Exception:
+                results = []
+            finally:
+                self.search_queue.task_done()
+
+            self.after(
+                0,
+                lambda t=token, r=results, s=source_path, q=query_text: self._on_search_done(t, r, s, q),
+            )
+
+    def _on_search_done(self, token, results, source_path, query_text):
+        if token != self.search_token:
+            return
+        self._show(results, source_path, query_text)
+
+    def _interrupt_pending_ui_work(self):
+        if self.render_job:
+            self.after_cancel(self.render_job)
+            self.render_job = None
+        self.render_update_token += 1
+        self.size_update_token += 1
+
+    def _on_entry_focus(self, event=None):
+        self._interrupt_pending_ui_work()
+
+    def _show(self, res, source_path, query_text=""):
         self.results = res
-        for i in self.tree.get_children():
-            self.tree.delete(i)
-        
+        self.size_update_token += 1
+        current_size_token = self.size_update_token
+
+        self.render_update_token += 1
+        current_render_token = self.render_update_token
+
+        if self.render_job:
+            self.after_cancel(self.render_job)
+            self.render_job = None
+
+        rows = self.tree.get_children()
+        if rows:
+            self.tree.delete(*rows)
+
+        self._update_source_status(source_path)
+
         if res:
-            prefix = os.path.normpath(source_path)
-            prefix_len = len(prefix)
-            
-            for fp in res:
-                nm = os.path.basename(fp)
-                full_dir = os.path.dirname(fp)
-                if full_dir.lower().startswith(prefix.lower()):
-                    pt = full_dir[prefix_len:].lstrip(os.sep)
-                else:
-                    pt = full_dir
-                
-                try:
-                    sz = f"{os.path.getsize(fp)//1024:,} KB"
-                    dt = time.strftime("%Y/%m/%d %H:%M", time.localtime(os.path.getmtime(fp)))
-                except:
-                    sz, dt = "", ""
-                self.tree.insert("", "end", values=(nm, pt, sz, dt))
-            self.status.set(f"{len(res):,} 个对象")
+            total_count = len(res)
+            display_count = min(total_count, self.max_display_results)
+            render_state = {
+                "results": res[:display_count],
+                "index": 0,
+                "source_path": os.path.normpath(source_path),
+                "max_name_px": 0,
+                "size_rows": [],
+            }
+
+            self._render_result_chunk(render_state, current_render_token, current_size_token)
+
+            if total_count > display_count:
+                self.status.set(f"显示 {display_count:,} / {total_count:,} 个结果")
+            else:
+                self.status.set(f"{total_count:,} 个结果")
         else:
-            self.status.set("")
+            self._update_name_col_width(0)
+            if query_text:
+                self.status.set("未找到匹配图片")
+            else:
+                self.status.set("就绪")
+
+        self._update_engine_status()
+
+    def _render_result_chunk(self, state, render_token, size_token):
+        if render_token != self.render_update_token:
+            return
+
+        results = state["results"]
+        start = state["index"]
+        end = min(start + self.render_chunk_size, len(results))
+        source_prefix = state["source_path"]
+        source_prefix_lower = source_prefix.lower()
+        prefix_len = len(source_prefix)
+
+        for idx in range(start, end):
+            file_path = results[idx]
+            name = os.path.basename(file_path)
+
+            if idx < self.name_measure_limit:
+                state["max_name_px"] = max(state["max_name_px"], self.tree_font.measure(name))
+
+            full_dir = os.path.dirname(file_path)
+            if full_dir.lower().startswith(source_prefix_lower):
+                relative_dir = full_dir[prefix_len:].lstrip(os.sep)
+            else:
+                relative_dir = full_dir
+
+            display_path = self._short_path(relative_dir, 34)
+            row_tag = "alt" if idx % 2 else "base"
+            item_id = self.tree.insert("", "end", values=(name, display_path, ""), tags=(row_tag,))
+
+            if idx < self.size_preload_limit:
+                state["size_rows"].append((item_id, file_path))
+
+        state["index"] = end
+
+        if end < len(results):
+            self.render_job = self.after(
+                self.render_interval_ms,
+                lambda s=state, rt=render_token, st=size_token: self._render_result_chunk(s, rt, st),
+            )
+            return
+
+        self.render_job = None
+        self._update_name_col_width(state["max_name_px"])
+        self._load_sizes_async(state["size_rows"], size_token)
+
+    def _load_sizes_async(self, size_rows, token):
+        if not size_rows:
+            return
+        threading.Thread(target=self._load_sizes_worker, args=(size_rows, token), daemon=True).start()
+
+    def _load_sizes_worker(self, size_rows, token):
+        batch = []
+        for item_id, file_path in size_rows:
+            if token != self.size_update_token:
+                return
+
+            batch.append((item_id, self._format_size_kb(file_path)))
+            if len(batch) >= 80:
+                chunk = batch
+                batch = []
+                self.after(0, lambda updates=chunk, current=token: self._apply_size_batch(updates, current))
+
+        if batch:
+            self.after(0, lambda updates=batch, current=token: self._apply_size_batch(updates, current))
+
+    def _apply_size_batch(self, updates, token):
+        if token != self.size_update_token:
+            return
+
+        for item_id, size_text in updates:
+            if not self.tree.exists(item_id):
+                continue
+            values = list(self.tree.item(item_id, "values"))
+            if len(values) < 3:
+                continue
+            values[2] = size_text
+            self.tree.item(item_id, values=values)
+
+    def _format_size_kb(self, file_path):
+        try:
+            return f"{os.path.getsize(file_path)//1024:,} KB"
+        except:
+            return ""
+
+    def _copy_files(self, files):
+        if not files:
+            return 0
+        output_dir = self._ensure_output_dir()
+        self._update_output_status(output_dir)
+
+        c = 0
+        for s in files:
+            try:
+                shutil.copy2(s, os.path.join(output_dir, os.path.basename(s)))
+                c += 1
+            except:
+                pass
+
+        self.status.set(f"已复制 {c} 个文件到保存目录")
+        return c
 
     def _copy(self):
         if not self.results:
             return
-        os.makedirs(OUTPUT_DIR, exist_ok=True)
-        c = 0
-        for s in self.results:
-            try:
-                shutil.copy2(s, os.path.join(OUTPUT_DIR, os.path.basename(s)))
-                c += 1
-            except:
-                pass
-        self.status.set(f"已复制 {c} 个文件到 每日JIT")
-
-    def _show_dialog(self, title, msg):
-        dlg = tk.Toplevel(self)
-        dlg.title(title)
-        dlg.resizable(False, False)
-        dlg.transient(self)
-        dlg.grab_set()
-        dlg.configure(bg="white")
-        
-        frame = tk.Frame(dlg, bg="white", padx=25, pady=20)
-        frame.pack(fill="both", expand=True)
-        
-        tk.Label(frame, text=msg, justify="left", font=("Microsoft YaHei", 10), bg="white").pack(anchor="w")
-        
-        btn_frame = tk.Frame(dlg, bg="#f0f0f0", pady=10)
-        btn_frame.pack(fill="x", side="bottom")
-        ttk.Button(btn_frame, text="确定", width=10, command=dlg.destroy).pack()
-        
-        dlg.update_idletasks()
-        dw, dh = dlg.winfo_width(), dlg.winfo_height()
-        px, py = self.winfo_x(), self.winfo_y()
-        pw, ph = self.winfo_width(), self.winfo_height()
-        x = px + (pw - dw) // 2
-        y = py + (ph - dh) // 2
-        dlg.geometry(f"+{x}+{y}")
-        
-        dlg.wait_window()
+        self._copy_files(self.results)
 
     def _help(self):
-        self._show_dialog("帮助", 
+        messagebox.showinfo(
+            "帮助",
             "使用方法:\n\n"
             "1. 文件 → 设置源目录\n"
-            "2. 输入精确文件名 (空格分隔多个)\n"
-            "3. 按 Enter/Ctrl+C 复制到桌面/每日JIT\n"
-            "4. Ctrl+` 打开悬浮搜索框\n\n"
+            "2. 文件 → 设置保存目录 (可选)\n"
+            "3. 输入精确文件名 (空格分隔多个)\n"
+            "4. 按 Enter/Ctrl+C 复制到保存目录\n"
+            "\n"
             "快捷键:\n"
-            "Ctrl+` - 悬浮搜索框\n"
             "Ctrl+A - 全选\n"
             "Ctrl+C/Enter - 复制\n"
-            "T - 切换置顶\n"
-            "Esc - 关闭悬浮框")
+            "T - 切换置顶",
+            parent=self,
+        )
 
     def _about(self):
-        self._show_dialog("关于 QuickImage", 
+        messagebox.showinfo(
+            "关于 QuickImage",
             "QuickImage v1.0\n\n"
             "极简图片搜索工具\n"
             "基于 Everything 搜索引擎\n\n"
-            "© NerionX")
+            "© NerionX",
+            parent=self,
+        )
 
     def _hotkey(self):
         try:
@@ -424,7 +918,11 @@ class App(tk.Tk):
         self.mini_status.bind("<B1-Motion>", self._mini_drag_move)
         
         # 定位
-        self.mini_win.geometry(f"+{x-200}+{y-60}")
+        self.mini_win.update_idletasks()
+        mini_w = self.mini_win.winfo_reqwidth()
+        mini_h = self.mini_win.winfo_reqheight()
+        x, y = self._clamp_popup_position(mini_w, mini_h, x - mini_w // 2, y - 60)
+        self.mini_win.geometry(f"+{x}+{y}")
         
         # 拖动支持
         self._drag_x = 0
@@ -448,6 +946,13 @@ class App(tk.Tk):
     def _mini_drag_move(self, e):
         x = self.mini_win.winfo_x() + e.x - self._drag_x
         y = self.mini_win.winfo_y() + e.y - self._drag_y
+        x, y = self._clamp_popup_position(
+            self.mini_win.winfo_width(),
+            self.mini_win.winfo_height(),
+            x,
+            y,
+            top_gap=0,
+        )
         self.mini_win.geometry(f"+{x}+{y}")
 
     def _close_mini(self):
@@ -477,7 +982,7 @@ class App(tk.Tk):
         def run():
             kws = parse_keywords(txt)
             exts = [".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".tiff"]
-            res = search_images(kws, src, exts, True)
+            res = search_images(kws, src, exts, True, max_results=self.max_search_results)
             self.after(0, lambda: self._mini_show(res))
 
         threading.Thread(target=run, daemon=True).start()
@@ -491,14 +996,7 @@ class App(tk.Tk):
 
     def _mini_enter(self, e):
         if self.mini_results:
-            os.makedirs(OUTPUT_DIR, exist_ok=True)
-            c = 0
-            for s in self.mini_results:
-                try:
-                    shutil.copy2(s, os.path.join(OUTPUT_DIR, os.path.basename(s)))
-                    c += 1
-                except:
-                    pass
+            c = self._copy_files(self.mini_results)
             self.mini_status.config(text=f"已复制 {c} 个文件")
         else:
             self.mini_status.config(text="无文件可复制")

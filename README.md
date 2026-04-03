@@ -1,115 +1,139 @@
-# QuickImage - Fast Image Search Tool
+# QuickImage
 
-[中文](#中文说明) | [English](#english)
-
----
-
-## English
-
-### Introduction
-QuickImage is a lightning-fast image search and copy tool for Windows. It leverages [Everything](https://www.voidtools.com/) search engine to provide instant file search with millisecond-level response time.
-
-### Features
-- ⚡ **Instant Search** - Real-time results as you type
-- 🎯 **Exact Match** - Search by exact filename (without extension)
-- 📋 **One-Click Copy** - Copy all matched files to Desktop with Enter
-- 🔍 **Floating Search Box** - Quick access with global hotkey (Ctrl+`)
-- 📌 **Always on Top** - Stay visible while working
-- 🖥️ **System Tray** - Minimize to tray, auto-start on boot
-
-### Requirements
-- Windows 10/11
-- [Everything](https://www.voidtools.com/) with **es.exe** command-line tool
-- Python 3.8+
-
-### Installation
-
-1. **Install Everything**
-   - Download from https://www.voidtools.com/
-   - During installation, check **"Install es command-line interface"**
-
-2. **Install Python dependencies**
-   ```bash
-   pip install keyboard pystray pillow
-   ```
-
-3. **Run**
-   ```bash
-   python main.pyw
-   ```
-
-### Usage
-1. Set source folder: `File → Set Source Directory`
-2. Type filename (space-separated for multiple)
-3. Press `Enter` or `Ctrl+C` to copy to `Desktop/每日JIT`
-
-### Hotkeys
-| Key | Action |
-|-----|--------|
-| `Ctrl+`` | Open floating search box |
-| `Enter` / `Ctrl+C` | Copy files |
-| `Ctrl+A` | Select all |
-| `T` | Toggle always on top |
-| `Esc` | Close floating box |
-
-### License
-MIT License - see [LICENSE](LICENSE)
+Windows 下的极速图片搜索复制工具（基于 Everything）。
 
 ---
 
-## 中文说明
+## 这是什么
 
-### 简介
-QuickImage 是一款极速图片搜索复制工具，基于 [Everything](https://www.voidtools.com/) 搜索引擎，提供毫秒级实时搜索体验。
+QuickImage 用来做一件事：
 
-### 功能特点
-- ⚡ **极速搜索** - 输入即搜，实时显示结果
-- 🎯 **精确匹配** - 按文件名精确搜索（不含扩展名）
-- 📋 **一键复制** - Enter 键批量复制到桌面
-- 🔍 **悬浮搜索框** - 全局快捷键 Ctrl+` 快速呼出
-- 📌 **窗口置顶** - 工作时保持可见
-- 🖥️ **系统托盘** - 最小化到托盘，支持开机启动
+**输入图片名 -> 立即搜到 -> 一键复制到指定目录。**
 
-### 环境要求
-- Windows 10/11
-- [Everything](https://www.voidtools.com/) 并安装 **es.exe** 命令行工具
-- Python 3.8+
+适合 JIT 取图、样图整理、批量补图等日常场景。
 
-### 安装步骤
+---
 
-1. **安装 Everything**
-   - 下载地址：https://www.voidtools.com/
-   - 安装时勾选 **"安装 es 命令行界面"**
+## 核心特点
 
-2. **安装 Python 依赖**
-   ```bash
-   pip install keyboard pystray pillow
-   ```
+- **输入即搜**：输入文件名就实时出结果
+- **精确匹配**：按文件名精确匹配（不含扩展名）
+- **多关键词**：支持一次输入多个名字（空格分隔）
+- **保存目录可自定义**：不再固定到桌面
+- **自动创建目录**：保存目录不存在会自动创建
+- **引擎自动切换**：优先 SDK，失败自动回退 `es.exe`
 
-3. **运行**
-   ```bash
-   python main.pyw
-   ```
+---
 
-### 使用方法
-1. 设置源目录：`文件 → 设置源目录`
-2. 输入文件名（多个用空格分隔）
-3. 按 `Enter` 或 `Ctrl+C` 复制到 `桌面/每日JIT`
+## 环境要求
 
-### 快捷键
+| 项目 | 说明 |
+|---|---|
+| 系统 | Windows 10 / 11 |
+| 搜索引擎 | 必须安装 [Everything](https://www.voidtools.com/) |
+| Python | 3.8+（源码运行时） |
+| SDK（可选） | `Everything64.dll`，可获得更好的搜索性能 |
+
+> 不使用 SDK 也可以正常运行，会自动使用 `es.exe`。
+
+---
+
+## 快速开始（源码运行）
+
+1. 安装 Everything（建议勾选 `es.exe` 命令行组件）
+2. 进入项目目录后运行：
+
+```bash
+python main.pyw
+```
+
+3. 首次打开后：
+   - `文件 -> 设置源目录`
+   - `文件 -> 设置保存目录（可选）`
+
+---
+
+## SDK 加速（可选）
+
+如果你希望更快，可以放置 SDK 的 DLL。
+
+推荐文件：
+
+- `Everything64.dll`（64 位系统）
+
+推荐放置位置（任一即可）：
+
+- `Everything-SDK/dll/Everything64.dll`
+- 程序同目录下的 `Everything64.dll`
+
+程序会自动识别并优先使用 SDK。
+
+---
+
+## 使用方法
+
+1. 在输入框输入图片名（多个名字用空格分开）
+2. 结果会实时显示在列表中
+3. 按 `Enter` 或 `Ctrl+C` 复制结果到保存目录
+
+---
+
+## 快捷键
+
 | 按键 | 功能 |
-|------|------|
-| `Ctrl+`` | 打开悬浮搜索框 |
-| `Enter` / `Ctrl+C` | 复制文件 |
-| `Ctrl+A` | 全选 |
-| `T` | 切换置顶 |
-| `Esc` | 关闭悬浮框 |
+|---|---|
+| `Enter` / `Ctrl+C` | 复制当前结果 |
+| `Ctrl+A` | 全选列表 |
+| `T` | 切换窗口置顶 |
 
-### 开机自启动
-运行 `添加开机启动.bat` 即可添加开机自启动。
+---
 
-### 许可证
-MIT License - 详见 [LICENSE](LICENSE)
+## 如何确认是否在用 SDK
+
+看窗口底部状态栏：
+
+- 显示 **`引擎: SDK`** -> 当前正在使用 SDK
+- 显示 **`引擎: es.exe`** -> 当前使用命令行模式（自动回退）
+
+---
+
+## 配置文件位置
+
+程序配置默认保存在：
+
+- `C:\Users\你的用户名\.image_search_config.json`
+
+会自动记住：
+
+- 源目录
+- 保存目录
+- 窗口位置
+
+---
+
+## 常见问题
+
+### 1) 输入后没结果
+
+- 检查是否已设置正确的源目录
+- 检查输入的是“文件名”（不含扩展名）
+- 确认 Everything 本身能搜到该文件
+
+### 2) 复制后没看到文件
+
+- 看底部“保存目录”显示是否正确
+- 如果目录不存在，程序会自动创建
+
+### 3) 为什么显示 `es.exe` 不是 SDK
+
+- SDK DLL 路径不对，或位数不匹配
+- 放入 `Everything64.dll` 后重启程序即可
+
+---
+
+## 许可证
+
+MIT License - 详见 `LICENSE`
 
 ---
 
