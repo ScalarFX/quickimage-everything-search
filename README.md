@@ -2,11 +2,17 @@
 
 Fast image search and copy tool for Windows, powered by Everything.
 
-English | 中文
+<p align="center">
+  <a href="#english">English</a> | <a href="#zh-cn">简体中文</a>
+</p>
 
-Chinese documentation: `README.zh.md`
+Chinese full documentation: [README.zh.md](README.zh.md)
 
 ---
+
+<a id="english"></a>
+
+## English
 
 ## What It Does
 
@@ -126,7 +132,9 @@ MIT License - see `LICENSE`
 
 ---
 
-## 中文说明
+<a id="zh-cn"></a>
+
+## 简体中文
 
 QuickImage 是一个基于 Everything 的 Windows 极速图片搜索复制工具。
 
