@@ -2,7 +2,11 @@
 
 Windows 下的极速图片搜索复制工具（基于 Everything）。
 
-English documentation: `README.md`
+<p align="center">
+  <a href="README.md">English</a> | <strong>简体中文</strong>
+</p>
+
+English documentation: [README.md](README.md)
 
 ---
 
