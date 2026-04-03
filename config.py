@@ -10,6 +10,7 @@ CONFIG_FILE = Path.home() / ".image_search_config.json"
 DEFAULT_CONFIG = {
     "source_path": "",
     "output_path": "",
+    "language": "zh",
     "exact_match": True,
     "window_geometry": "",
     "image_extensions": [".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".tiff", ".tif"]

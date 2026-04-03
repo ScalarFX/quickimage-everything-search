@@ -35,12 +35,129 @@ except ImportError:
 OUTPUT_DIR = os.path.join(os.path.expanduser("~"), "Desktop", "每日JIT")
 WINDOW_EDGE_MARGIN = 40
 
+I18N = {
+    "zh": {
+        "not_set": "未设置",
+        "ready": "就绪",
+        "searching": "搜索中...",
+        "menu_file": "文件(F)",
+        "menu_edit": "编辑(E)",
+        "menu_help": "帮助(H)",
+        "set_source": "设置源目录(O)...",
+        "set_output": "设置保存目录(S)...",
+        "language": "语言(L)",
+        "lang_zh": "中文",
+        "lang_en": "English",
+        "exit": "退出(X)",
+        "copy_output": "复制到保存目录(C)",
+        "select_all": "全选(A)",
+        "topmost": "窗口置顶(T)",
+        "help": "帮助(H)",
+        "about": "关于 QuickImage(A)...",
+        "col_name": "名称",
+        "col_path": "路径",
+        "col_size": "大小",
+        "source_prefix": "源",
+        "output_prefix": "保存",
+        "engine_prefix": "引擎",
+        "backend_not_ready": "未就绪",
+        "source_updated": "源目录已更新",
+        "output_updated": "保存目录已更新",
+        "source_required": "请先设置源目录 (文件 -> 设置源目录)",
+        "display_results": "显示 {display:,} / {total:,} 个结果",
+        "results_count": "{count:,} 个结果",
+        "not_found": "未找到匹配图片",
+        "copied": "已复制 {count} 个文件到保存目录",
+        "help_title": "帮助",
+        "help_text": (
+            "使用方法:\n\n"
+            "1. 文件 -> 设置源目录\n"
+            "2. 文件 -> 设置保存目录 (可选)\n"
+            "3. 输入精确文件名 (空格分隔多个)\n"
+            "4. 按 Enter/Ctrl+C 复制到保存目录\n"
+            "\n"
+            "快捷键:\n"
+            "Ctrl+A - 全选\n"
+            "Ctrl+C/Enter - 复制\n"
+            "T - 切换置顶"
+        ),
+        "about_title": "关于 QuickImage",
+        "about_text": "QuickImage v1.0\n\n极简图片搜索工具\n基于 Everything 搜索引擎\n\n© NerionX",
+        "tray_show": "显示主窗口",
+        "tray_exit": "退出",
+        "mini_source_required": "未设置源目录",
+        "mini_found": "找到 {count} 个文件，按 Enter 复制",
+        "mini_not_found": "未找到",
+        "mini_copied": "已复制 {count} 个文件",
+        "mini_empty": "无文件可复制",
+    },
+    "en": {
+        "not_set": "Not set",
+        "ready": "Ready",
+        "searching": "Searching...",
+        "menu_file": "File(F)",
+        "menu_edit": "Edit(E)",
+        "menu_help": "Help(H)",
+        "set_source": "Set Source Directory(O)...",
+        "set_output": "Set Output Directory(S)...",
+        "language": "Language(L)",
+        "lang_zh": "Chinese",
+        "lang_en": "English",
+        "exit": "Exit(X)",
+        "copy_output": "Copy to Output(C)",
+        "select_all": "Select All(A)",
+        "topmost": "Always on Top(T)",
+        "help": "Help(H)",
+        "about": "About QuickImage(A)...",
+        "col_name": "Name",
+        "col_path": "Path",
+        "col_size": "Size",
+        "source_prefix": "Source",
+        "output_prefix": "Output",
+        "engine_prefix": "Engine",
+        "backend_not_ready": "Not Ready",
+        "source_updated": "Source directory updated",
+        "output_updated": "Output directory updated",
+        "source_required": "Please set source directory first (File -> Set Source Directory)",
+        "display_results": "Showing {display:,} / {total:,} results",
+        "results_count": "{count:,} results",
+        "not_found": "No matching images found",
+        "copied": "Copied {count} files to output directory",
+        "help_title": "Help",
+        "help_text": (
+            "How to use:\n\n"
+            "1. File -> Set Source Directory\n"
+            "2. File -> Set Output Directory (optional)\n"
+            "3. Enter exact file names (space-separated for multiple)\n"
+            "4. Press Enter/Ctrl+C to copy to output directory\n"
+            "\n"
+            "Shortcuts:\n"
+            "Ctrl+A - Select all\n"
+            "Ctrl+C/Enter - Copy\n"
+            "T - Toggle always on top"
+        ),
+        "about_title": "About QuickImage",
+        "about_text": "QuickImage v1.0\n\nMinimal image search tool\nPowered by Everything search engine\n\n© NerionX",
+        "tray_show": "Show Main Window",
+        "tray_exit": "Exit",
+        "mini_source_required": "Source directory is not set",
+        "mini_found": "Found {count} files, press Enter to copy",
+        "mini_not_found": "No results",
+        "mini_copied": "Copied {count} files",
+        "mini_empty": "No files to copy",
+    },
+}
+
 
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
         
         self.cfg = load_config()
+        self.current_language = self.cfg.get("language", "zh")
+        if self.current_language not in I18N:
+            self.current_language = "zh"
+        self.lang_var = tk.StringVar(value=self.current_language)
 
         self.colors = {
             "bg_app": "#f6f7f9",
@@ -123,6 +240,51 @@ class App(tk.Tk):
         # 默认置顶
         self._toggle_topmost()
 
+    def _t(self, key):
+        lang_dict = I18N.get(self.current_language, I18N["zh"])
+        return lang_dict.get(key, I18N["zh"].get(key, key))
+
+    def _backend_label(self):
+        label = get_backend_label()
+        if label == "未就绪":
+            return self._t("backend_not_ready")
+        return label
+
+    def _set_language(self, lang, save=True):
+        lang = "en" if lang == "en" else "zh"
+        if lang == self.current_language and hasattr(self, "tree"):
+            return
+
+        self.current_language = lang
+        self.lang_var.set(lang)
+
+        if save:
+            self.cfg["language"] = lang
+            save_config(self.cfg)
+
+        if hasattr(self, "tree"):
+            self._menu()
+            self.tree.heading("name", text=self._t("col_name"), anchor="w")
+            self.tree.heading("path", text=self._t("col_path"), anchor="w")
+            self.tree.heading("size", text=self._t("col_size"), anchor="e")
+            self._update_source_status(self.cfg.get("source_path", ""))
+            self._update_output_status(self._get_output_dir())
+            self._update_engine_status()
+            if self.results:
+                total_count = len(self.results)
+                display_count = min(total_count, self.max_display_results)
+                if total_count > display_count:
+                    self.status.set(self._t("display_results").format(display=display_count, total=total_count))
+                else:
+                    self.status.set(self._t("results_count").format(count=total_count))
+            elif hasattr(self, "entry") and self.entry.get().strip():
+                self.status.set(self._t("not_found"))
+            else:
+                self.status.set(self._t("ready"))
+
+    def _on_language_changed(self):
+        self._set_language(self.lang_var.get(), save=True)
+
     def _setup_tray(self):
         """设置系统托盘"""
         if not HAS_TRAY:
@@ -135,8 +297,8 @@ class App(tk.Tk):
             icon_img = Image.new('RGB', (64, 64), color='#0078d4')
         
         menu = pystray.Menu(
-            pystray.MenuItem("显示主窗口", self._show_from_tray),
-            pystray.MenuItem("退出", self._quit_app)
+            pystray.MenuItem(self._t("tray_show"), self._show_from_tray),
+            pystray.MenuItem(self._t("tray_exit"), self._quit_app)
         )
         
         self.tray_icon = pystray.Icon("QuickImage", icon_img, "QuickImage", menu)
@@ -337,26 +499,31 @@ class App(tk.Tk):
         
         f = tk.Menu(m, tearoff=0, bg=menu_bg, fg=menu_fg,
                     activebackground=menu_active_bg, activeforeground=menu_active_fg)
-        f.add_command(label="设置源目录(O)...", command=self._browse)
-        f.add_command(label="设置保存目录(S)...", command=self._browse_output)
+        f.add_command(label=self._t("set_source"), command=self._browse)
+        f.add_command(label=self._t("set_output"), command=self._browse_output)
+        lang_menu = tk.Menu(f, tearoff=0, bg=menu_bg, fg=menu_fg,
+                            activebackground=menu_active_bg, activeforeground=menu_active_fg)
+        lang_menu.add_radiobutton(label=self._t("lang_zh"), value="zh", variable=self.lang_var, command=self._on_language_changed)
+        lang_menu.add_radiobutton(label=self._t("lang_en"), value="en", variable=self.lang_var, command=self._on_language_changed)
+        f.add_cascade(label=self._t("language"), menu=lang_menu)
         f.add_separator()
-        f.add_command(label="退出(X)", command=self._quit_app, accelerator="Alt+F4")
-        m.add_cascade(label="文件(F)", menu=f, underline=0)
+        f.add_command(label=self._t("exit"), command=self._quit_app, accelerator="Alt+F4")
+        m.add_cascade(label=self._t("menu_file"), menu=f, underline=0)
         
         e = tk.Menu(m, tearoff=0, bg=menu_bg, fg=menu_fg,
                     activebackground=menu_active_bg, activeforeground=menu_active_fg)
-        e.add_command(label="复制到保存目录(C)", command=self._copy, accelerator="Ctrl+C")
+        e.add_command(label=self._t("copy_output"), command=self._copy, accelerator="Ctrl+C")
         e.add_separator()
-        e.add_command(label="全选(A)", command=self._select_all, accelerator="Ctrl+A")
-        e.add_checkbutton(label="窗口置顶(T)", variable=self.is_topmost, command=self._toggle_topmost, accelerator="T")
-        m.add_cascade(label="编辑(E)", menu=e, underline=0)
+        e.add_command(label=self._t("select_all"), command=self._select_all, accelerator="Ctrl+A")
+        e.add_checkbutton(label=self._t("topmost"), variable=self.is_topmost, command=self._toggle_topmost, accelerator="T")
+        m.add_cascade(label=self._t("menu_edit"), menu=e, underline=0)
         
         h = tk.Menu(m, tearoff=0, bg=menu_bg, fg=menu_fg,
                     activebackground=menu_active_bg, activeforeground=menu_active_fg)
-        h.add_command(label="帮助(H)", command=self._help, accelerator="F1")
+        h.add_command(label=self._t("help"), command=self._help, accelerator="F1")
         h.add_separator()
-        h.add_command(label="关于 QuickImage(A)...", command=self._about, accelerator="Ctrl+F1")
-        m.add_cascade(label="帮助(H)", menu=h, underline=0)
+        h.add_command(label=self._t("about"), command=self._about, accelerator="Ctrl+F1")
+        m.add_cascade(label=self._t("menu_help"), menu=h, underline=0)
         
         self.config(menu=m)
         
@@ -417,9 +584,9 @@ class App(tk.Tk):
         cols = ("name", "path", "size")
         self.tree = ttk.Treeview(list_frame, columns=cols, show="headings", selectmode="extended")
         
-        self.tree.heading("name", text="名称", anchor="w")
-        self.tree.heading("path", text="路径", anchor="w")
-        self.tree.heading("size", text="大小", anchor="e")
+        self.tree.heading("name", text=self._t("col_name"), anchor="w")
+        self.tree.heading("path", text=self._t("col_path"), anchor="w")
+        self.tree.heading("size", text=self._t("col_size"), anchor="e")
         
         self.tree.column("name", width=self.default_name_col_width, minwidth=120, anchor="w", stretch=False)
         self.tree.column("path", width=420, minwidth=180, anchor="w", stretch=True)
@@ -457,10 +624,10 @@ class App(tk.Tk):
         status_bottom = tk.Frame(status_frame, bg=self.colors["bg_card"])
         status_bottom.pack(fill="x", padx=8, pady=(0, 4))
         
-        self.status = tk.StringVar(value="就绪")
-        self.source_info = tk.StringVar(value="源: 未设置")
-        self.output_info = tk.StringVar(value="保存: 未设置")
-        self.engine_info = tk.StringVar(value="引擎: 检测中")
+        self.status = tk.StringVar(value=self._t("ready"))
+        self.source_info = tk.StringVar(value=f"{self._t('source_prefix')}: {self._t('not_set')}")
+        self.output_info = tk.StringVar(value=f"{self._t('output_prefix')}: {self._t('not_set')}")
+        self.engine_info = tk.StringVar(value=f"{self._t('engine_prefix')}: {self._t('backend_not_ready')}")
 
         tk.Label(
             status_top,
@@ -540,7 +707,7 @@ class App(tk.Tk):
 
     def _short_path(self, path, max_len=32):
         if not path:
-            return "未设置"
+            return self._t("not_set")
         if len(path) <= max_len:
             return path
         head = max_len // 2 - 2
@@ -550,17 +717,17 @@ class App(tk.Tk):
     def _update_source_status(self, path):
         if not hasattr(self, "source_info"):
             return
-        self.source_info.set(f"源: {self._short_path(path, 28)}")
+        self.source_info.set(f"{self._t('source_prefix')}: {self._short_path(path, 28)}")
 
     def _update_output_status(self, path):
         if not hasattr(self, "output_info"):
             return
-        self.output_info.set(f"保存: {self._short_path(path, 28)}")
+        self.output_info.set(f"{self._t('output_prefix')}: {self._short_path(path, 28)}")
 
     def _update_engine_status(self):
         if not hasattr(self, "engine_info"):
             return
-        self.engine_info.set(f"引擎: {get_backend_label()}")
+        self.engine_info.set(f"{self._t('engine_prefix')}: {self._backend_label()}")
 
     def _browse(self):
         p = filedialog.askdirectory()
@@ -568,7 +735,7 @@ class App(tk.Tk):
             self.cfg["source_path"] = p
             save_config(self.cfg)
             self._update_source_status(p)
-            self.status.set("源目录已更新")
+            self.status.set(self._t("source_updated"))
 
     def _browse_output(self):
         initial_dir = self._get_output_dir()
@@ -581,7 +748,7 @@ class App(tk.Tk):
             save_config(self.cfg)
             output_dir = self._ensure_output_dir()
             self._update_output_status(output_dir)
-            self.status.set("保存目录已更新")
+            self.status.set(self._t("output_updated"))
 
     def _select_all(self):
         for item in self.tree.get_children():
@@ -610,7 +777,7 @@ class App(tk.Tk):
             self.search_token += 1
             self.last_search_signature = None
             self._clear_search_queue()
-            self.status.set("请先设置源目录 (文件 → 设置源目录)")
+            self.status.set(self._t("source_required"))
             self._update_source_status("")
             return
         if not txt:
@@ -627,7 +794,7 @@ class App(tk.Tk):
         self.last_search_signature = signature
         self.search_token += 1
         current_token = self.search_token
-        self.status.set("搜索中...")
+        self.status.set(self._t("searching"))
         self._enqueue_search(current_token, src, txt)
 
     def _clear_search_queue(self):
@@ -709,15 +876,15 @@ class App(tk.Tk):
             self._render_result_chunk(render_state, current_render_token, current_size_token)
 
             if total_count > display_count:
-                self.status.set(f"显示 {display_count:,} / {total_count:,} 个结果")
+                self.status.set(self._t("display_results").format(display=display_count, total=total_count))
             else:
-                self.status.set(f"{total_count:,} 个结果")
+                self.status.set(self._t("results_count").format(count=total_count))
         else:
             self._update_name_col_width(0)
             if query_text:
-                self.status.set("未找到匹配图片")
+                self.status.set(self._t("not_found"))
             else:
-                self.status.set("就绪")
+                self.status.set(self._t("ready"))
 
         self._update_engine_status()
 
@@ -818,7 +985,7 @@ class App(tk.Tk):
             except:
                 pass
 
-        self.status.set(f"已复制 {c} 个文件到保存目录")
+        self.status.set(self._t("copied").format(count=c))
         return c
 
     def _copy(self):
@@ -828,27 +995,15 @@ class App(tk.Tk):
 
     def _help(self):
         messagebox.showinfo(
-            "帮助",
-            "使用方法:\n\n"
-            "1. 文件 → 设置源目录\n"
-            "2. 文件 → 设置保存目录 (可选)\n"
-            "3. 输入精确文件名 (空格分隔多个)\n"
-            "4. 按 Enter/Ctrl+C 复制到保存目录\n"
-            "\n"
-            "快捷键:\n"
-            "Ctrl+A - 全选\n"
-            "Ctrl+C/Enter - 复制\n"
-            "T - 切换置顶",
+            self._t("help_title"),
+            self._t("help_text"),
             parent=self,
         )
 
     def _about(self):
         messagebox.showinfo(
-            "关于 QuickImage",
-            "QuickImage v1.0\n\n"
-            "极简图片搜索工具\n"
-            "基于 Everything 搜索引擎\n\n"
-            "© NerionX",
+            self._t("about_title"),
+            self._t("about_text"),
             parent=self,
         )
 
@@ -972,7 +1127,7 @@ class App(tk.Tk):
         txt = self.mini_entry.get().strip()
         
         if not src:
-            self.mini_status.config(text="未设置源目录")
+            self.mini_status.config(text=self._t("mini_source_required"))
             return
         if not txt:
             self.mini_status.config(text="")
@@ -990,16 +1145,16 @@ class App(tk.Tk):
     def _mini_show(self, res):
         self.mini_results = res
         if res:
-            self.mini_status.config(text=f"找到 {len(res)} 个文件，按 Enter 复制")
+            self.mini_status.config(text=self._t("mini_found").format(count=len(res)))
         else:
-            self.mini_status.config(text="未找到")
+            self.mini_status.config(text=self._t("mini_not_found"))
 
     def _mini_enter(self, e):
         if self.mini_results:
             c = self._copy_files(self.mini_results)
-            self.mini_status.config(text=f"已复制 {c} 个文件")
+            self.mini_status.config(text=self._t("mini_copied").format(count=c))
         else:
-            self.mini_status.config(text="无文件可复制")
+            self.mini_status.config(text=self._t("mini_empty"))
 
 
 if __name__ == "__main__":

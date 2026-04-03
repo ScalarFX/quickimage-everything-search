@@ -1,144 +1,126 @@
 # QuickImage
 
-Windows 下的极速图片搜索复制工具（基于 Everything）。
+Fast image search and copy tool for Windows, powered by Everything.
+
+Chinese documentation: `README.zh.md`
 
 ---
 
-## 这是什么
+## What It Does
 
-QuickImage 用来做一件事：
+QuickImage focuses on one workflow:
 
-**输入图片名 -> 立即搜到 -> 一键复制到指定目录。**
+**Type image names -> get instant matches -> copy to your target folder.**
 
-适合 JIT 取图、样图整理、批量补图等日常场景。
-
----
-
-## 核心特点
-
-- **输入即搜**：输入文件名就实时出结果
-- **精确匹配**：按文件名精确匹配（不含扩展名）
-- **多关键词**：支持一次输入多个名字（空格分隔）
-- **保存目录可自定义**：不再固定到桌面
-- **自动创建目录**：保存目录不存在会自动创建
-- **引擎自动切换**：优先 SDK，失败自动回退 `es.exe`
+Ideal for JIT asset pickup, sample organization, and batch refill work.
 
 ---
 
-## 环境要求
+## Key Features
 
-| 项目 | 说明 |
+- Real-time search while typing
+- Exact filename matching (without extension)
+- Multiple keywords in one query (space-separated)
+- Custom output directory
+- Auto-create output directory if missing
+- Automatic engine fallback: SDK first, then `es.exe`
+- Built-in language switch: `File -> Language -> English/Chinese`
+
+---
+
+## Requirements
+
+| Item | Requirement |
 |---|---|
-| 系统 | Windows 10 / 11 |
-| 搜索引擎 | 必须安装 [Everything](https://www.voidtools.com/) |
-| Python | 3.8+（源码运行时） |
-| SDK（可选） | `Everything64.dll`，可获得更好的搜索性能 |
+| OS | Windows 10 / 11 |
+| Search Engine | [Everything](https://www.voidtools.com/) must be installed |
+| Python | 3.8+ (for source run) |
+| SDK (Optional) | `Everything64.dll` for better search performance |
 
-> 不使用 SDK 也可以正常运行，会自动使用 `es.exe`。
+> The app still works without SDK and will automatically use `es.exe`.
 
 ---
 
-## 快速开始（源码运行）
+## Quick Start (Source)
 
-1. 安装 Everything（建议勾选 `es.exe` 命令行组件）
-2. 进入项目目录后运行：
+1. Install Everything (recommended with `es.exe` command line component)
+2. Run in project directory:
 
 ```bash
 python main.pyw
 ```
 
-3. 首次打开后：
-   - `文件 -> 设置源目录`
-   - `文件 -> 设置保存目录（可选）`
+3. On first launch:
+   - `File -> Set Source Directory`
+   - `File -> Set Output Directory` (optional)
 
 ---
 
-## SDK 加速（可选）
+## SDK Acceleration (Optional)
 
-如果你希望更快，可以放置 SDK 的 DLL。
+If you want faster searches, place the SDK DLL.
 
-下载地址（官方）：
+- SDK page: `https://www.voidtools.com/support/everything/sdk/`
+- SDK zip: `https://www.voidtools.com/Everything-SDK.zip`
 
-- SDK 页面：`https://www.voidtools.com/support/everything/sdk/`
-- SDK 压缩包：`https://www.voidtools.com/Everything-SDK.zip`
+Recommended file:
 
-推荐文件：
+- `Everything64.dll` (for 64-bit systems)
 
-- `Everything64.dll`（64 位系统）
-
-推荐放置位置（任一即可）：
+Recommended locations (either one):
 
 - `Everything-SDK/dll/Everything64.dll`
-- 程序同目录下的 `Everything64.dll`
+- App folder as `Everything64.dll`
 
-程序会自动识别并优先使用 SDK。
-
----
-
-## 使用方法
-
-1. 在输入框输入图片名（多个名字用空格分开）
-2. 结果会实时显示在列表中
-3. 按 `Enter` 或 `Ctrl+C` 复制结果到保存目录
+The app auto-detects and prefers SDK when available.
 
 ---
 
-## 快捷键
+## Usage
 
-| 按键 | 功能 |
+1. Type image names in the search box (space-separated for multiple)
+2. Results appear in real time
+3. Press `Enter` or `Ctrl+C` to copy results to output directory
+
+---
+
+## Shortcuts
+
+| Key | Action |
 |---|---|
-| `Enter` / `Ctrl+C` | 复制当前结果 |
-| `Ctrl+A` | 全选列表 |
-| `T` | 切换窗口置顶 |
+| `Enter` / `Ctrl+C` | Copy current results |
+| `Ctrl+A` | Select all results |
+| `T` | Toggle always-on-top |
 
 ---
 
-## 如何确认是否在用 SDK
+## Check Current Engine
 
-看窗口底部状态栏：
+Look at the bottom status bar:
 
-- 显示 **`引擎: SDK`** -> 当前正在使用 SDK
-- 显示 **`引擎: es.exe`** -> 当前使用命令行模式（自动回退）
-
----
-
-## 配置文件位置
-
-程序配置默认保存在：
-
-- `C:\Users\你的用户名\.image_search_config.json`
-
-会自动记住：
-
-- 源目录
-- 保存目录
-- 窗口位置
+- `Engine: SDK` -> SDK is currently in use
+- `Engine: es.exe` -> command-line fallback is in use
 
 ---
 
-## 常见问题
+## Config File
 
-### 1) 输入后没结果
+Configuration is saved at:
 
-- 检查是否已设置正确的源目录
-- 检查输入的是“文件名”（不含扩展名）
-- 确认 Everything 本身能搜到该文件
+- `C:\Users\<your_user>\.image_search_config.json`
 
-### 2) 复制后没看到文件
+Saved items include:
 
-- 看底部“保存目录”显示是否正确
-- 如果目录不存在，程序会自动创建
-
-### 3) 为什么显示 `es.exe` 不是 SDK
-
-- SDK DLL 路径不对，或位数不匹配
-- 放入 `Everything64.dll` 后重启程序即可
+- Source directory
+- Output directory
+- Window geometry
+- UI language
 
 ---
 
-## 许可证
+## License
 
-MIT License - 详见 `LICENSE`
+MIT License - see `LICENSE`
 
 ---
 
