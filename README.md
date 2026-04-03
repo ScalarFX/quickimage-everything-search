@@ -2,6 +2,8 @@
 
 Fast image search and copy tool for Windows, powered by Everything.
 
+English | 中文
+
 Chinese documentation: `README.zh.md`
 
 ---
@@ -121,6 +123,26 @@ Saved items include:
 ## License
 
 MIT License - see `LICENSE`
+
+---
+
+## 中文说明
+
+QuickImage 是一个基于 Everything 的 Windows 极速图片搜索复制工具。
+
+- 输入即搜，支持多关键词（空格分隔）
+- 精确文件名匹配（不含扩展名）
+- 支持自定义保存目录
+- 搜索引擎自动切换：优先 SDK，失败回退 `es.exe`
+- 软件内支持中英文切换：`文件 -> 语言 -> 中文/English`
+
+快速开始：
+
+1. 安装 Everything（建议包含 `es.exe`）
+2. 运行 `python main.pyw`
+3. 在应用中设置源目录与保存目录
+
+完整中文文档请查看：`README.zh.md`
 
 ---
 
