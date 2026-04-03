@@ -57,6 +57,11 @@ python main.pyw
 
 如果你希望更快，可以放置 SDK 的 DLL。
 
+下载地址（官方）：
+
+- SDK 页面：`https://www.voidtools.com/support/everything/sdk/`
+- SDK 压缩包：`https://www.voidtools.com/Everything-SDK.zip`
+
 推荐文件：
 
 - `Everything64.dll`（64 位系统）
