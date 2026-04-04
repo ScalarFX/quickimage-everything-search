@@ -83,6 +83,20 @@ def find_everything_dll() -> Optional[str]:
     return None
 
 
+def find_everything_executable() -> Optional[str]:
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    possible_paths = [
+        os.path.join(current_dir, "Everything.exe"),
+        os.path.join(r"C:\Program Files\Everything", "Everything.exe"),
+        os.path.join(r"C:\Program Files (x86)\Everything", "Everything.exe"),
+    ]
+
+    for path in possible_paths:
+        if os.path.exists(path):
+            return path
+    return None
+
+
 def _bind_sdk_functions(sdk) -> None:
     sdk.Everything_Reset.argtypes = []
     sdk.Everything_Reset.restype = None

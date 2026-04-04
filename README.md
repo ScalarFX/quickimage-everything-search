@@ -37,11 +37,11 @@ Ideal for JIT asset pickup, sample organization, and batch refill work.
 | Item | Requirement |
 |---|---|
 | OS | Windows 10 / 11 |
-| Search Engine | [Everything](https://www.voidtools.com/) must be installed |
+| Search Engine | [Everything](https://www.voidtools.com/) can be downloaded and installed automatically on first launch |
 | Python | 3.8+ (for source run) |
-| SDK (Optional) | `Everything64.dll` for better search performance |
+| SDK | Downloaded automatically by QuickImage when needed |
 
-> The app still works without SDK and will automatically use `es.exe`.
+> You do not need to install the SDK manually. QuickImage prepares the SDK automatically and falls back to `es.exe` if needed.
 
 ---
 
@@ -55,28 +55,26 @@ python main.pyw
 ```
 
 3. On first launch:
+   - If Everything is missing, QuickImage shows a bilingual prompt and can install it automatically
    - `File -> Set Source Directory`
    - `File -> Set Output Directory` (optional)
 
+> The language menu is now bilingual: `Language / 语言`, so English and Chinese users can both find it quickly.
+
 ---
 
-## SDK Acceleration (Optional)
+## SDK Acceleration
 
-If you want faster searches, place the SDK DLL.
+Regular users do not need to handle the SDK manually.
 
-- SDK page: `https://www.voidtools.com/support/everything/sdk/`
-- SDK zip: `https://www.voidtools.com/Everything-SDK.zip`
+On startup, QuickImage can:
 
-Recommended file:
+- detect whether the SDK is available
+- download it from voidtools automatically when missing
+- place the correct DLL automatically
+- fall back to `es.exe` if the SDK step fails
 
-- `Everything64.dll` (for 64-bit systems)
-
-Recommended locations (either one):
-
-- `Everything-SDK/dll/Everything64.dll`
-- App folder as `Everything64.dll`
-
-The app auto-detects and prefers SDK when available.
+Manual DLL placement is only needed for developer debugging.
 
 ---
 

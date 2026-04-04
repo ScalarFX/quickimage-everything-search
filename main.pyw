@@ -7,8 +7,14 @@ import queue
 import re
 import shutil
 import threading
+import subprocess
+import tempfile
 import tkinter as tk
 import tkinter.font as tkfont
+import urllib.error
+import urllib.parse
+import urllib.request
+import zipfile
 from tkinter import ttk, filedialog, messagebox
 import ctypes
 
@@ -22,7 +28,14 @@ except:
         pass
 
 from config import load_config, save_config
-from search_engine import search_images, parse_keywords, get_backend_label
+from search_engine import (
+    search_images,
+    parse_keywords,
+    get_backend_label,
+    find_everything_dll,
+    find_es_exe,
+    find_everything_executable,
+)
 
 # 系统托盘支持
 try:
@@ -34,6 +47,9 @@ except ImportError:
 
 OUTPUT_DIR = os.path.join(os.path.expanduser("~"), "Desktop", "每日JIT")
 WINDOW_EDGE_MARGIN = 40
+VOIDTOOLS_DOWNLOADS_URL = "https://www.voidtools.com/downloads/"
+DOWNLOAD_TIMEOUT_SECONDS = 30
+DOWNLOAD_BLOCK_SIZE = 262144
 
 I18N = {
     "zh": {
@@ -45,9 +61,9 @@ I18N = {
         "menu_help": "帮助(H)",
         "set_source": "设置源目录(O)...",
         "set_output": "设置保存目录(S)...",
-        "language": "语言(L)",
-        "lang_zh": "中文",
-        "lang_en": "English",
+        "language": "语言 / Language (L)",
+        "lang_zh": "中文 / Chinese",
+        "lang_en": "English / 英文",
         "exit": "退出(X)",
         "copy_output": "复制到保存目录(C)",
         "select_all": "全选(A)",
@@ -90,6 +106,35 @@ I18N = {
         "mini_not_found": "未找到",
         "mini_copied": "已复制 {count} 个文件",
         "mini_empty": "无文件可复制",
+        "deps_prompt_title": "安装搜索组件",
+        "deps_prompt_body": (
+            "检测到本机还没有可用的 Everything 搜索环境。\n\n"
+            "QuickImage 现在可以自动为你完成：\n"
+            "1. 下载并安装 Everything（官方）\n"
+            "2. 自动下载加速组件 SDK\n"
+            "3. 自动准备命令行搜索组件\n\n"
+            "整个过程会使用官方 voidtools 下载地址。\n"
+            "是否现在开始？\n\n"
+            "English:\n"
+            "QuickImage can now download and install Everything, the SDK, and the CLI helper automatically.\n"
+            "Do you want to continue now?"
+        ),
+        "deps_installing": "正在自动准备搜索组件，请稍候...",
+        "deps_ready": "搜索组件已准备完成",
+        "deps_declined": "已跳过自动安装，可稍后再次打开程序进行安装",
+        "deps_failed_title": "自动安装失败",
+        "deps_failed": (
+            "自动安装没有完成。\n\n"
+            "请确认网络可访问 voidtools 官网，或者稍后重试。\n\n"
+            "English:\n"
+            "Automatic setup did not complete. Please check your network and try again."
+        ),
+        "deps_done_title": "安装完成",
+        "deps_done": (
+            "搜索组件已准备完成，现在可以直接使用。\n\n"
+            "English:\n"
+            "Search components are ready. You can use QuickImage now."
+        ),
     },
     "en": {
         "not_set": "Not set",
@@ -100,9 +145,9 @@ I18N = {
         "menu_help": "Help(H)",
         "set_source": "Set Source Directory(O)...",
         "set_output": "Set Output Directory(S)...",
-        "language": "Language(L)",
-        "lang_zh": "Chinese",
-        "lang_en": "English",
+        "language": "Language / 语言 (L)",
+        "lang_zh": "Chinese / 中文",
+        "lang_en": "English / 英文",
         "exit": "Exit(X)",
         "copy_output": "Copy to Output(C)",
         "select_all": "Select All(A)",
@@ -145,6 +190,33 @@ I18N = {
         "mini_not_found": "No results",
         "mini_copied": "Copied {count} files",
         "mini_empty": "No files to copy",
+        "deps_prompt_title": "Install Search Components",
+        "deps_prompt_body": (
+            "QuickImage could not find a working Everything search environment.\n\n"
+            "It can automatically:\n"
+            "1. Download and install Everything from voidtools\n"
+            "2. Download the SDK for faster search\n"
+            "3. Download the CLI helper automatically\n\n"
+            "Would you like to continue now?\n\n"
+            "中文：\n"
+            "QuickImage 可以自动帮你安装 Everything、SDK 和命令行组件。是否现在开始？"
+        ),
+        "deps_installing": "Preparing search components automatically...",
+        "deps_ready": "Search components are ready",
+        "deps_declined": "Automatic setup skipped. You can reopen the app later to install it.",
+        "deps_failed_title": "Automatic Setup Failed",
+        "deps_failed": (
+            "Automatic setup did not complete.\n\n"
+            "Please check network access to the voidtools website and try again.\n\n"
+            "中文：\n"
+            "自动安装未完成，请检查网络后重试。"
+        ),
+        "deps_done_title": "Setup Complete",
+        "deps_done": (
+            "Search components are ready. You can use QuickImage now.\n\n"
+            "中文：\n"
+            "搜索组件已准备完成，现在可以直接使用。"
+        ),
     },
 }
 
@@ -225,6 +297,7 @@ class App(tk.Tk):
 
         self.is_topmost = tk.BooleanVar(value=True)  # 默认置顶
         self.tray_icon = None
+        self.bootstrap_in_progress = False
         
         self._menu()
         self._ui()
@@ -239,6 +312,7 @@ class App(tk.Tk):
         
         # 默认置顶
         self._toggle_topmost()
+        self.after(300, self._bootstrap_dependencies_if_needed)
 
     def _t(self, key):
         lang_dict = I18N.get(self.current_language, I18N["zh"])
@@ -450,6 +524,164 @@ class App(tk.Tk):
             self.cfg["output_path"] = ""
             save_config(self.cfg)
             return OUTPUT_DIR
+
+    def _is_64bit_python(self):
+        return ctypes.sizeof(ctypes.c_void_p) == 8
+
+    def _dependency_state(self):
+        return {
+            "everything_exe": find_everything_executable(),
+            "es_exe": find_es_exe(),
+            "sdk_dll": find_everything_dll(),
+        }
+
+    def _bootstrap_dependencies_if_needed(self):
+        if self.bootstrap_in_progress:
+            return
+
+        state = self._dependency_state()
+        needs_everything = not state["everything_exe"]
+        needs_sdk = not state["sdk_dll"]
+        needs_es = not state["es_exe"]
+
+        if not (needs_everything or needs_sdk or needs_es):
+            return
+
+        if needs_everything:
+            should_continue = messagebox.askyesno(
+                self._t("deps_prompt_title"),
+                self._t("deps_prompt_body"),
+                parent=self,
+            )
+            if not should_continue:
+                self.status.set(self._t("deps_declined"))
+                return
+
+        self._start_dependency_bootstrap(needs_everything, needs_sdk, needs_es)
+
+    def _start_dependency_bootstrap(self, needs_everything, needs_sdk, needs_es):
+        if self.bootstrap_in_progress:
+            return
+
+        self.bootstrap_in_progress = True
+        self.status.set(self._t("deps_installing"))
+        threading.Thread(
+            target=self._bootstrap_dependencies_worker,
+            args=(needs_everything, needs_sdk, needs_es),
+            daemon=True,
+        ).start()
+
+    def _bootstrap_dependencies_worker(self, needs_everything, needs_sdk, needs_es):
+        try:
+            links = self._fetch_voidtools_links()
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+
+            with tempfile.TemporaryDirectory(prefix="quickimage-setup-") as temp_dir:
+                if needs_everything:
+                    installer_name = os.path.basename(urllib.parse.urlparse(links["everything_installer"]).path)
+                    installer_path = os.path.join(temp_dir, installer_name)
+                    self._download_file(links["everything_installer"], installer_path)
+                    self._install_everything(installer_path)
+
+                if needs_es:
+                    es_zip_name = os.path.basename(urllib.parse.urlparse(links["es_zip"]).path)
+                    es_zip_path = os.path.join(temp_dir, es_zip_name)
+                    self._download_file(links["es_zip"], es_zip_path)
+                    self._extract_zip_member(es_zip_path, "es.exe", os.path.join(current_dir, "es.exe"))
+
+                if needs_sdk:
+                    sdk_zip_name = os.path.basename(urllib.parse.urlparse(links["sdk_zip"]).path)
+                    sdk_zip_path = os.path.join(temp_dir, sdk_zip_name)
+                    self._download_file(links["sdk_zip"], sdk_zip_path)
+                    dll_name = "Everything64.dll" if self._is_64bit_python() else "Everything32.dll"
+                    self._extract_zip_member(sdk_zip_path, dll_name, os.path.join(current_dir, dll_name))
+
+            final_state = self._dependency_state()
+            if not final_state["everything_exe"]:
+                raise RuntimeError("Everything executable not found after installation.")
+            if not (final_state["sdk_dll"] or final_state["es_exe"]):
+                raise RuntimeError("No working search backend was prepared.")
+
+            self.after(0, self._bootstrap_dependencies_success)
+        except Exception as exc:
+            self.after(0, lambda err=str(exc): self._bootstrap_dependencies_failed(err))
+
+    def _bootstrap_dependencies_success(self):
+        self.bootstrap_in_progress = False
+        self.status.set(self._t("deps_ready"))
+        self._update_engine_status()
+        messagebox.showinfo(self._t("deps_done_title"), self._t("deps_done"), parent=self)
+
+    def _bootstrap_dependencies_failed(self, error_text):
+        self.bootstrap_in_progress = False
+        self._update_engine_status()
+        self.status.set(self._t("backend_not_ready"))
+        detail_text = f"{self._t('deps_failed')}\n\n{error_text}"
+        messagebox.showerror(self._t("deps_failed_title"), detail_text, parent=self)
+
+    def _fetch_voidtools_links(self):
+        html = self._download_text(VOIDTOOLS_DOWNLOADS_URL)
+        arch = "x64" if self._is_64bit_python() else "x86"
+
+        everything_installer = self._find_download_link(
+            html,
+            rf'href="([^"]*Everything-[^"]+\.{arch}\.msi)"',
+        )
+        es_zip = self._find_download_link(
+            html,
+            rf'href="([^"]*ES-[^"]+\.{arch}\.zip)"',
+        )
+        sdk_zip = self._find_download_link(
+            html,
+            r'href="([^"]*Everything-SDK\.zip)"',
+        )
+
+        return {
+            "everything_installer": everything_installer,
+            "es_zip": es_zip,
+            "sdk_zip": sdk_zip,
+        }
+
+    def _find_download_link(self, html, pattern):
+        match = re.search(pattern, html, flags=re.IGNORECASE)
+        if not match:
+            raise RuntimeError(f"Download link not found for pattern: {pattern}")
+        return urllib.parse.urljoin(VOIDTOOLS_DOWNLOADS_URL, match.group(1))
+
+    def _download_text(self, url):
+        request = urllib.request.Request(url, headers={"User-Agent": "QuickImage/1.0"})
+        with urllib.request.urlopen(request, timeout=DOWNLOAD_TIMEOUT_SECONDS) as response:
+            return response.read().decode("utf-8", errors="ignore")
+
+    def _download_file(self, url, target_path):
+        request = urllib.request.Request(url, headers={"User-Agent": "QuickImage/1.0"})
+        with urllib.request.urlopen(request, timeout=DOWNLOAD_TIMEOUT_SECONDS) as response, open(target_path, "wb") as output:
+            while True:
+                block = response.read(DOWNLOAD_BLOCK_SIZE)
+                if not block:
+                    break
+                output.write(block)
+
+    def _install_everything(self, installer_path):
+        completed = subprocess.run(
+            ["msiexec", "/i", installer_path, "/passive", "/norestart"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if completed.returncode != 0:
+            raise RuntimeError((completed.stderr or completed.stdout or "msiexec failed").strip())
+
+    def _extract_zip_member(self, zip_path, member_name, output_path):
+        wanted_name = member_name.lower()
+        with zipfile.ZipFile(zip_path) as archive:
+            for item in archive.infolist():
+                if os.path.basename(item.filename).lower() != wanted_name:
+                    continue
+                with archive.open(item) as src, open(output_path, "wb") as dst:
+                    shutil.copyfileobj(src, dst)
+                return
+        raise RuntimeError(f"{member_name} not found in archive.")
 
     def _setup_styles(self):
         self.style = ttk.Style()

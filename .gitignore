@@ -5,6 +5,12 @@ __pycache__/
 *.pyd
 .Python
 *.so
+build/
+dist/
+release/
+*.spec
+Everything-SDK/
+Quicklmage.lnk
 
 # IDE
 .idea/
@@ -14,6 +20,10 @@ __pycache__/
 
 # Config (user specific)
 .image_search_config.json
+es.exe
+Everything32.dll
+Everything64.dll
+Everything.exe
 
 # Unused files
 _unused/

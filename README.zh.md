@@ -37,11 +37,11 @@ QuickImage 用来做一件事：
 | 项目 | 说明 |
 |---|---|
 | 系统 | Windows 10 / 11 |
-| 搜索引擎 | 必须安装 [Everything](https://www.voidtools.com/) |
+| 搜索引擎 | 首次启动时可由程序自动下载并安装 [Everything](https://www.voidtools.com/) |
 | Python | 3.8+（源码运行时） |
-| SDK（可选） | `Everything64.dll`，可获得更好的搜索性能 |
+| SDK（自动） | 程序会自动下载 SDK 加速组件，用户无需手动处理 |
 
-> 不使用 SDK 也可以正常运行，会自动使用 `es.exe`。
+> 不需要手动下载 SDK。程序会自动准备加速组件，失败时也会自动回退到 `es.exe`。
 
 ---
 
@@ -55,30 +55,26 @@ python main.pyw
 ```
 
 3. 首次打开后：
+   - 如果本机还没有 Everything，程序会先弹出双语引导，并帮你自动下载安装
    - `文件 -> 设置源目录`
    - `文件 -> 设置保存目录（可选）`
 
+> 语言菜单已改成双语显示：`语言 / Language`，英文用户也能直接找到。
+
 ---
 
-## SDK 加速（可选）
+## SDK 加速
 
-如果你希望更快，可以放置 SDK 的 DLL。
+普通用户不需要手动处理 SDK。
 
-下载地址（官方）：
+程序启动时会自动：
 
-- SDK 页面：`https://www.voidtools.com/support/everything/sdk/`
-- SDK 压缩包：`https://www.voidtools.com/Everything-SDK.zip`
+- 检测是否已有 SDK
+- 没有时自动从 voidtools 官方下载
+- 自动放到程序可识别的位置
+- 如果失败则自动回退到 `es.exe`
 
-推荐文件：
-
-- `Everything64.dll`（64 位系统）
-
-推荐放置位置（任一即可）：
-
-- `Everything-SDK/dll/Everything64.dll`
-- 程序同目录下的 `Everything64.dll`
-
-程序会自动识别并优先使用 SDK。
+只有开发者想手动调试时，才需要关心 DLL 文件位置。
 
 ---
 
