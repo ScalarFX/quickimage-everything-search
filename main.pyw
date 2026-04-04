@@ -61,6 +61,7 @@ I18N = {
         "menu_help": "帮助(H)",
         "set_source": "设置源目录(O)...",
         "set_output": "设置保存目录(S)...",
+        "check_deps": "检查搜索组件 / Check Search Components",
         "language": "语言 / Language (L)",
         "lang_zh": "中文 / Chinese",
         "lang_en": "English / 英文",
@@ -135,6 +136,23 @@ I18N = {
             "English:\n"
             "Search components are ready. You can use QuickImage now."
         ),
+        "deps_repair_title": "修复搜索组件",
+        "deps_repair_body": (
+            "QuickImage 将重新检查 Everything、SDK 和命令行搜索组件。\n"
+            "如果缺少内容，会自动下载并修复。\n\n"
+            "是否现在开始？\n\n"
+            "English:\n"
+            "QuickImage will re-check Everything, the SDK, and the CLI helper, then repair anything missing.\n"
+            "Do you want to continue now?"
+        ),
+        "deps_missing_runtime_title": "搜索组件缺失",
+        "deps_missing_runtime": (
+            "当前没有可用的搜索组件，因此无法执行搜索。\n\n"
+            "是否现在自动修复？\n\n"
+            "English:\n"
+            "A working search component is missing, so search cannot continue.\n"
+            "Would you like QuickImage to repair it now?"
+        ),
     },
     "en": {
         "not_set": "Not set",
@@ -145,6 +163,7 @@ I18N = {
         "menu_help": "Help(H)",
         "set_source": "Set Source Directory(O)...",
         "set_output": "Set Output Directory(S)...",
+        "check_deps": "Check Search Components / 检查搜索组件",
         "language": "Language / 语言 (L)",
         "lang_zh": "Chinese / 中文",
         "lang_en": "English / 英文",
@@ -216,6 +235,21 @@ I18N = {
             "Search components are ready. You can use QuickImage now.\n\n"
             "中文：\n"
             "搜索组件已准备完成，现在可以直接使用。"
+        ),
+        "deps_repair_title": "Repair Search Components",
+        "deps_repair_body": (
+            "QuickImage will re-check Everything, the SDK, and the CLI helper.\n"
+            "Anything missing will be downloaded automatically.\n\n"
+            "Do you want to continue now?\n\n"
+            "中文：\n"
+            "QuickImage 会重新检查 Everything、SDK 和命令行组件，并自动修复缺失部分。"
+        ),
+        "deps_missing_runtime_title": "Search Component Missing",
+        "deps_missing_runtime": (
+            "A working search component is missing, so search cannot continue.\n\n"
+            "Would you like QuickImage to repair it now?\n\n"
+            "中文：\n"
+            "当前缺少可用搜索组件，是否现在自动修复？"
         ),
     },
 }
@@ -312,7 +346,7 @@ class App(tk.Tk):
         
         # 默认置顶
         self._toggle_topmost()
-        self.after(300, self._bootstrap_dependencies_if_needed)
+        self.after(300, self._bootstrap_dependencies_on_first_run)
 
     def _t(self, key):
         lang_dict = I18N.get(self.current_language, I18N["zh"])
@@ -535,7 +569,12 @@ class App(tk.Tk):
             "sdk_dll": find_everything_dll(),
         }
 
-    def _bootstrap_dependencies_if_needed(self):
+    def _bootstrap_dependencies_on_first_run(self):
+        if self.cfg.get("dependencies_bootstrapped", False):
+            return
+        self._bootstrap_dependencies_if_needed(first_run=True)
+
+    def _bootstrap_dependencies_if_needed(self, first_run=False):
         if self.bootstrap_in_progress:
             return
 
@@ -545,6 +584,9 @@ class App(tk.Tk):
         needs_es = not state["es_exe"]
 
         if not (needs_everything or needs_sdk or needs_es):
+            if first_run:
+                self.cfg["dependencies_bootstrapped"] = True
+                save_config(self.cfg)
             return
 
         if needs_everything:
@@ -557,9 +599,9 @@ class App(tk.Tk):
                 self.status.set(self._t("deps_declined"))
                 return
 
-        self._start_dependency_bootstrap(needs_everything, needs_sdk, needs_es)
+        self._start_dependency_bootstrap(needs_everything, needs_sdk, needs_es, first_run=first_run)
 
-    def _start_dependency_bootstrap(self, needs_everything, needs_sdk, needs_es):
+    def _start_dependency_bootstrap(self, needs_everything, needs_sdk, needs_es, first_run=False):
         if self.bootstrap_in_progress:
             return
 
@@ -567,11 +609,11 @@ class App(tk.Tk):
         self.status.set(self._t("deps_installing"))
         threading.Thread(
             target=self._bootstrap_dependencies_worker,
-            args=(needs_everything, needs_sdk, needs_es),
+            args=(needs_everything, needs_sdk, needs_es, first_run),
             daemon=True,
         ).start()
 
-    def _bootstrap_dependencies_worker(self, needs_everything, needs_sdk, needs_es):
+    def _bootstrap_dependencies_worker(self, needs_everything, needs_sdk, needs_es, first_run):
         try:
             links = self._fetch_voidtools_links()
             current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -602,15 +644,18 @@ class App(tk.Tk):
             if not (final_state["sdk_dll"] or final_state["es_exe"]):
                 raise RuntimeError("No working search backend was prepared.")
 
-            self.after(0, self._bootstrap_dependencies_success)
+            self.after(0, lambda: self._bootstrap_dependencies_success(first_run))
         except Exception as exc:
             self.after(0, lambda err=str(exc): self._bootstrap_dependencies_failed(err))
 
-    def _bootstrap_dependencies_success(self):
+    def _bootstrap_dependencies_success(self, first_run):
         self.bootstrap_in_progress = False
+        self.cfg["dependencies_bootstrapped"] = True
+        save_config(self.cfg)
         self.status.set(self._t("deps_ready"))
         self._update_engine_status()
-        messagebox.showinfo(self._t("deps_done_title"), self._t("deps_done"), parent=self)
+        if first_run:
+            messagebox.showinfo(self._t("deps_done_title"), self._t("deps_done"), parent=self)
 
     def _bootstrap_dependencies_failed(self, error_text):
         self.bootstrap_in_progress = False
@@ -618,6 +663,53 @@ class App(tk.Tk):
         self.status.set(self._t("backend_not_ready"))
         detail_text = f"{self._t('deps_failed')}\n\n{error_text}"
         messagebox.showerror(self._t("deps_failed_title"), detail_text, parent=self)
+
+    def _repair_dependencies(self):
+        if self.bootstrap_in_progress:
+            return
+
+        should_continue = messagebox.askyesno(
+            self._t("deps_repair_title"),
+            self._t("deps_repair_body"),
+            parent=self,
+        )
+        if not should_continue:
+            return
+
+        self.cfg["dependencies_bootstrapped"] = False
+        save_config(self.cfg)
+
+        state = self._dependency_state()
+        self._start_dependency_bootstrap(
+            not state["everything_exe"],
+            not state["sdk_dll"],
+            not state["es_exe"],
+            first_run=False,
+        )
+
+    def _ensure_dependencies_before_search(self):
+        state = self._dependency_state()
+        has_backend = bool(state["sdk_dll"] or state["es_exe"])
+        if state["everything_exe"] and has_backend:
+            return True
+
+        should_continue = messagebox.askyesno(
+            self._t("deps_missing_runtime_title"),
+            self._t("deps_missing_runtime"),
+            parent=self,
+        )
+        if not should_continue:
+            return False
+
+        self.cfg["dependencies_bootstrapped"] = False
+        save_config(self.cfg)
+        self._start_dependency_bootstrap(
+            not state["everything_exe"],
+            not state["sdk_dll"],
+            not state["es_exe"],
+            first_run=False,
+        )
+        return False
 
     def _fetch_voidtools_links(self):
         html = self._download_text(VOIDTOOLS_DOWNLOADS_URL)
@@ -733,6 +825,7 @@ class App(tk.Tk):
                     activebackground=menu_active_bg, activeforeground=menu_active_fg)
         f.add_command(label=self._t("set_source"), command=self._browse)
         f.add_command(label=self._t("set_output"), command=self._browse_output)
+        f.add_command(label=self._t("check_deps"), command=self._repair_dependencies)
         lang_menu = tk.Menu(f, tearoff=0, bg=menu_bg, fg=menu_fg,
                             activebackground=menu_active_bg, activeforeground=menu_active_fg)
         lang_menu.add_radiobutton(label=self._t("lang_zh"), value="zh", variable=self.lang_var, command=self._on_language_changed)
@@ -995,6 +1088,8 @@ class App(tk.Tk):
 
     def _key(self, e):
         if e.keysym in ["Control_L","Control_R","Shift_L","Shift_R","Alt_L","Alt_R","Return"]:
+            return
+        if not self._ensure_dependencies_before_search():
             return
         self._interrupt_pending_ui_work()
         if self.timer:
@@ -1349,6 +1444,8 @@ class App(tk.Tk):
 
     def _mini_key(self, e):
         if e.keysym in ["Control_L","Control_R","Shift_L","Shift_R","Alt_L","Alt_R","Return","Escape"]:
+            return
+        if not self._ensure_dependencies_before_search():
             return
         if self.mini_timer:
             self.after_cancel(self.mini_timer)

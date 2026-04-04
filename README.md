@@ -8,6 +8,8 @@ Fast image search and copy tool for Windows, powered by Everything.
 
 Chinese full documentation: [README.zh.md](README.zh.md)
 
+![QuickImage demo](assets/quickimage-demo.gif)
+
 ---
 
 ## What It Does
@@ -41,7 +43,7 @@ Ideal for JIT asset pickup, sample organization, and batch refill work.
 | Python | 3.8+ (for source run) |
 | SDK | Downloaded automatically by QuickImage when needed |
 
-> You do not need to install the SDK manually. QuickImage prepares the SDK automatically and falls back to `es.exe` if needed.
+> You do not need to install the SDK manually. QuickImage prepares it automatically on first launch and falls back to `es.exe` if needed.
 
 ---
 
@@ -67,7 +69,7 @@ python main.pyw
 
 Regular users do not need to handle the SDK manually.
 
-On startup, QuickImage can:
+On first launch, QuickImage can:
 
 - detect whether the SDK is available
 - download it from voidtools automatically when missing
@@ -75,6 +77,10 @@ On startup, QuickImage can:
 - fall back to `es.exe` if the SDK step fails
 
 Manual DLL placement is only needed for developer debugging.
+
+If you want to re-check dependencies later, use:
+
+- `File -> Check Search Components / 检查搜索组件`
 
 ---
 

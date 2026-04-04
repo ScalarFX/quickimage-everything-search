@@ -8,6 +8,8 @@ Windows 下的极速图片搜索复制工具（基于 Everything）。
 
 English documentation: [README.md](README.md)
 
+![QuickImage 演示](assets/quickimage-demo.gif)
+
 ---
 
 ## 这是什么
@@ -41,7 +43,7 @@ QuickImage 用来做一件事：
 | Python | 3.8+（源码运行时） |
 | SDK（自动） | 程序会自动下载 SDK 加速组件，用户无需手动处理 |
 
-> 不需要手动下载 SDK。程序会自动准备加速组件，失败时也会自动回退到 `es.exe`。
+> 不需要手动下载 SDK。程序会在首次启动时自动准备加速组件，失败时也会自动回退到 `es.exe`。
 
 ---
 
@@ -67,7 +69,7 @@ python main.pyw
 
 普通用户不需要手动处理 SDK。
 
-程序启动时会自动：
+程序首次启动时会自动：
 
 - 检测是否已有 SDK
 - 没有时自动从 voidtools 官方下载
@@ -75,6 +77,10 @@ python main.pyw
 - 如果失败则自动回退到 `es.exe`
 
 只有开发者想手动调试时，才需要关心 DLL 文件位置。
+
+如果你后续想重新检查，也可以在菜单里手动点击：
+
+- `文件 -> 检查搜索组件 / Check Search Components`
 
 ---
 

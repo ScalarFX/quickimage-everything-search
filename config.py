@@ -11,6 +11,7 @@ DEFAULT_CONFIG = {
     "source_path": "",
     "output_path": "",
     "language": "zh",
+    "dependencies_bootstrapped": False,
     "exact_match": True,
     "window_geometry": "",
     "image_extensions": [".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".tiff", ".tif"]
